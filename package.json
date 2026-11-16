@@ -1,0 +1,14 @@
+{
+  "name": "relay-module6-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Node.js API gateway for RELAY Module 6",
+  "main": "server.js",
+  "scripts": {
+    "start": "node server.js",
+    "test": "node test_gateway.js"
+  },
+  "dependencies": {
+    "express": "^4.21.2"
+  }
+}
