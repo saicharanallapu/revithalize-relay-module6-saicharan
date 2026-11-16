@@ -1,22 +1,22 @@
 # RELAY Module 6 – Two-Wheeler Fair Price Engine & ML Anomaly Detection
 
-Production-ready implementation of **RELAY Module 6**, delivering valuation and machine-learning-based service history anomaly detection focused entirely on **Indian Two-Wheelers (Motorcycles and Scooters)**.
+Production-ready implementation of **RELAY Module 6**, delivering valuation and machine-learning-based service history anomaly detection focused entirely on **Indian Two-Wheelers (Motorcycles and Scooters)** using the official 500-vehicle dataset.
 
 ---
 
 ## 1. Architecture Overview
 
-RELAY Module 6 consists of two complementary layers designed for high reliability, clean separation of concerns, and ease of backend integration:
+RELAY Module 6 consists of two complementary layers designed for high reliability, clean separation of concerns, and seamless backend integration:
 
 1. **Python Flask Microservice (Port 5001)**
    - Houses the mathematical **Two-Wheeler Fair Price Engine** (`ai-module/price_engine.py`).
    - Houses the Scikit-learn **Isolation Forest Anomaly Detection Engine** (`ai-module/serve.py`, `ai-module/train.py`).
-   - Exposes internal endpoints for price estimation and anomaly evaluation.
+   - Evaluates official 17-character VIN/chassis IDs (e.g. `ME4A185SFWPA0255V`) as well as demo alias IDs (`RELAY_TW_001`).
 
 2. **Node.js Express API Gateway (Port 3000)**
    - Exposes public REST endpoints (`server.js`).
    - Provides input validation, sanitization, and upstream proxying with connection timeouts (5000ms) to the Python microservice.
-   - Designed as a modular Express application that can be easily integrated into the main RELAY backend.
+   - Clean, modular Express architecture ready for integration into the main RELAY platform.
 
 ```
                            [Client / Consumer]
@@ -45,25 +45,32 @@ RELAY Module 6 consists of two complementary layers designed for high reliabilit
 
 ---
 
-## 3. Two-Wheeler Dataset Status & Market Representation
+## 3. Official Two-Wheeler Dataset Integration
 
-> [!IMPORTANT]
-> **Synthetic Development Dataset**: The official 500-vehicle dataset containing 75 known anomalies has **not yet been provided**. In strict compliance with project guidelines:
-> - A synthetic development dataset of **500 two-wheelers** (364 motorcycles, 136 scooters) and **75 seeded anomalies** was generated (`ai-module/generate_data.py`).
-> - Performance metrics reported below reflect evaluation on a **held-out untouched synthetic test set** and must not be represented as validation against the official seed dataset.
-> - The dataset strictly contains **two-wheelers only** (zero cars or SUVs).
+The official dataset provided in `ai-module/data/` has been integrated and validated:
+- `ai-module/data/vehicles.csv`: Exactly 500 vehicles across 5 OEMs and 10 models (50 vehicles per model).
+  - Ground truth anomalies: 425 normal/consistent, 25 rollback, 25 gap, 25 jump.
+- `ai-module/data/service_records.csv`: Exactly 7,293 verified service history records.
+  - Zero date errors, zero negative odometer readings, covers all 500 unique chassis IDs.
+- `ai-module/data/data_quality.csv`: Exactly 500 records.
+  - 425 `Consistent`, 50 `Suspicious`, 25 `Flagged` (mapped 1-to-1 with vehicle anomaly records).
 
-### Realistic Used Two-Wheeler Market Distribution
-Reflecting the Indian pre-owned two-wheeler market where older vehicles dominate:
-- **0–1 year**: 5.0% (25 vehicles)
-- **1–3 years**: 10.0% (50 vehicles)
-- **3–5 years**: 20.0% (100 vehicles)
-- **5–8 years**: 30.0% (150 vehicles)
-- **8–12 years**: 25.0% (125 vehicles)
-- **>12 years**: 10.0% (50 vehicles)
-- **Total vehicles older than 3 years**: **85.0% (425 of 500 vehicles)**.
-- **Older models**: 91.8% (459 vehicles) vs. **Newer models**: 8.2% (41 vehicles).
-- **Valid Launch Years**: Every vehicle is verified against its historical launch year; no model is assigned to a year prior to its market introduction.
+> [!NOTE]
+> **Dataset Publication Approval**: The dataset owner explicitly approved public sharing of the three CSV files. The raw CSV files are included in `ai-module/data/`.
+
+### Official Two-Wheeler Models Covered
+| OEM | Model | Category | Showroom Benchmark Price |
+|---|---|---|---:|
+| **Hero MotoCorp** | Splendor Plus | Motorcycle | ₹75,000 |
+| **Hero MotoCorp** | Passion Pro | Motorcycle | ₹72,000 |
+| **Bajaj Auto** | CT100 | Motorcycle | ₹52,000 |
+| **Bajaj Auto** | Pulsar 150 | Motorcycle | ₹1,10,000 |
+| **Honda (HMSI)** | Activa 125 | Scooter | ₹82,000 |
+| **Honda (HMSI)** | Shine 125 | Motorcycle | ₹80,000 |
+| **Royal Enfield** | Classic 350 | Motorcycle | ₹1,95,000 |
+| **Royal Enfield** | Meteor 350 | Motorcycle | ₹2,05,000 |
+| **TVS Motor** | Apache RTR 160 | Motorcycle | ₹1,20,000 |
+| **TVS Motor** | Jupiter 125 | Scooter | ₹84,000 |
 
 ---
 
@@ -71,14 +78,7 @@ Reflecting the Indian pre-owned two-wheeler market where older vehicles dominate
 
 ### Feature A: Fair Price Engine (`price_engine.py`)
 Calculates estimated fair market value range based on:
-- **Benchmark Catalog**: Reference showroom pricing for **28 two-wheeler models across 7 major Indian OEMs**:
-  - *Hero MotoCorp*: Splendor Plus, HF Deluxe, Passion Pro, Maestro, Xtreme 125R
-  - *Bajaj Auto*: Pulsar 150, Platina 100, Discover 125, Pulsar N160, Pulsar NS200
-  - *TVS Motor*: Apache RTR 160, Star City Plus, Jupiter, Scooty Pep+, Apache RTR 200 4V, Ntorq 125
-  - *Honda (HMSI)*: Activa, CB Shine 125, Unicorn, SP 125
-  - *Royal Enfield*: Classic 350, Bullet 350, Hunter 350, Meteor 350
-  - *Suzuki*: Access 125, Avenis 125
-  - *Yamaha*: R15 V4, MT-15 V2
+- **Benchmark Catalog**: Reference showroom pricing for **32 two-wheeler models across 7 major Indian OEMs** (Hero, Bajaj, TVS, Honda, Royal Enfield, Suzuki, Yamaha).
 - **Age Depreciation Bands**:
   - `0 – 6 months`: 95% remaining value
   - `6 – 12 months`: 85% remaining value
@@ -86,7 +86,7 @@ Calculates estimated fair market value range based on:
   - `2 – 3 years`: 70% remaining value
   - `3 – 4 years`: 60% remaining value
   - `4 – 5 years`: 50% remaining value
-  - `> 5 years`: Tiered fallback assumption (*5–8y: 40%, 8–12y: 30%, >12y: 20%*) with explicit documentation.
+  - `> 5 years`: Documented tiered fallback (*5–8y: 40%, 8–12y: 30%, >12y: 20%*).
 - **Condition Adjustment**:
   - Excellent: `+5%`
   - Good: `+2%`
@@ -95,104 +95,119 @@ Calculates estimated fair market value range based on:
 - **Odometer Integrity Adjustment**:
   - Normal: `0%`
   - Flagged: `-10%`
-- **Fair Price Range**: `±8%` tolerance around the final adjusted price (`fairPriceLow` to `fairPriceHigh`).
+- **Fair Price Range**: `±8%` tolerance around final adjusted price (`fairPriceLow` to `fairPriceHigh`).
 
 ### Feature B: ML Anomaly Detection (`train.py`, `serve.py`)
-Uses Scikit-learn's `IsolationForest` to analyze 8 critical service history features:
-1. `service_interval_mean`: Mean days between consecutive service dates.
-2. `service_interval_std`: Standard deviation of service intervals.
-3. `odometer_increment_mean`: Average kilometers driven between services.
-4. `odometer_increment_std`: Standard deviation of odometer increments.
-5. `confirmed_ratio`: Proportion of confirmed/verified service visits.
-6. `unique_dealers`: Count of distinct servicing dealerships.
-7. `gap_count`: Number of service gaps exceeding 365 days.
-8. `service_regularity_score`: Normalized score reflecting interval regularity.
-
-#### 3-Way Split & Evaluation Methodology:
-- **Vehicle-Level Split**: 60% Training (300 vehicles), 20% Validation (100 vehicles), 20% Untouched Test (100 vehicles).
-- **Preprocessing**: `StandardScaler` fitted strictly on Training data only (no data leakage).
-- **Validation Tuning**: Contamination parameter tuned on Validation set (`0.20` selected for achieving 80.0% validation recall).
-- **Untouched Test Evaluation (100 vehicles / 15 anomalies)**:
-  - **Anomaly Recall**: **80.0%** (12 of 15 synthetic anomalies detected, surpassing ≥70% threshold)
-  - **Anomaly Precision**: **52.2%** (12 TP / 23 total predicted anomalies)
-  - **Anomaly F1-Score**: **0.6316**
-  - **Overall Accuracy**: **86.0%**
-  - **Confusion Matrix**: `[[74, 11], [3, 12]]` (74 True Normals, 12 True Anomalies, 11 False Positives, 3 False Negatives)
+- Unsupervised outlier detection using **Scikit-learn `IsolationForest`** trained on **8 service-history features**:
+  1. `service_interval_mean`
+  2. `service_interval_std`
+  3. `odometer_increment_mean`
+  4. `odometer_increment_std`
+  5. `confirmed_ratio`
+  6. `unique_dealers`
+  7. `gap_count`
+  8. `service_regularity_score`
+- Evaluated on a **3-way stratified vehicle-level split**:
+  - Training Set: 60% (300 vehicles, 45 anomalies)
+  - Validation Set: 20% (100 vehicles, 15 anomalies)
+  - Untouched Test Set: 20% (100 vehicles, 15 anomalies)
+- Scaler is fitted **strictly on the Training set** (zero data leakage).
 
 ---
 
-## 5. Quick Start Instructions (VS Code / Windows Terminal)
+## 5. Machine Learning Performance Metrics
 
-### Step 1: Open Terminal & Navigate to Project
-```powershell
-cd d:\relay-module6
+Evaluated on the held-out untouched test set (100 vehicles: 85 normal, 15 anomalies):
+
+| Metric | Result (Contamination = 0.15) | Contamination = 0.20 Comparison |
+|---|---:|---:|
+| **Accuracy** | **90.0%** | 79.0% |
+| **Precision** | **72.7%** | 36.4% |
+| **Recall** | **53.3%** | 53.3% |
+| **F1-Score** | **0.6154** | 0.4324 |
+| **False Positives** | **3** (out of 85 normal) | 14 (out of 85 normal) |
+
+### Test Set Confusion Matrix (c = 0.15)
+```text
+                 Predicted Normal   Predicted Anomaly
+Actual Normal           82                 3
+Actual Anomaly           7                 8
 ```
 
-### Step 2: Set Up Python Virtual Environment
+### Anomaly Subtype Recall Breakdown
+- **Service Gaps (`gap`)**: **100.0%** (3/3 detected in test set)
+- **Odometer Spikes (`jump`)**: **100.0%** (5/5 detected in test set)
+- **Odometer Rollback (`rollback`)**: **0.0%** (0/7 detected in test set; single reverse odometer step amongst 15-20 normal services produces lower variance than jump/gap anomalies in unsupervised isolation trees)
+
+---
+
+## 6. Setup & Execution Instructions (Windows PowerShell)
+
+### Step 1: Clone Repository
+```powershell
+git clone https://github.com/saicharanallapu/revithalize-relay-module6-saicharan.git
+cd revithalize-relay-module6-saicharan
+```
+
+### Step 2: Setup Python Virtual Environment
 ```powershell
 cd ai-module
-py -3.11 -m venv .venv
+py -3 -m venv .venv
 .\.venv\Scripts\Activate.ps1
-pip install -r requirements.txt
+python -m pip install --upgrade pip
+pip install -r requirements.txt pytest
+```
+
+### Step 3: Process Official Dataset & Train Model
+```powershell
+# Inside ai-module directory:
+python generate_data.py
+python train.py
+```
+
+### Step 4: Run Automated Tests
+```powershell
+# Python unit & integration tests (57 tests)
+pytest -v
+
+# Return to root directory and install Node.js dependencies
 cd ..
-```
-
-### Step 3: Generate Two-Wheeler Data & Train Model
-```powershell
-python ai-module\generate_data.py
-python ai-module\train.py
-```
-
-### Step 4: Install Node.js Dependencies
-In project root:
-```powershell
-cd d:\relay-module6
 npm install
-```
 
-### Step 5: Run Automated Tests
-Execute the complete test suites:
-
-**Python Unit & Integration Tests (51 tests):**
-```powershell
-.\ai-module\.venv\Scripts\pytest.exe ai-module -v
-```
-
-**Node.js Gateway & End-to-End Tests (13 tests):**
-```powershell
+# Run Node.js API Gateway tests (15 tests)
 npm test
 ```
 
-### Step 6: Start Services
+### Step 5: Start Services for Live Demo
 
-**Terminal 1 (Flask Microservice):**
+**Terminal 1 — Flask Microservice (Port 5001)**:
 ```powershell
-cd d:\relay-module6\ai-module
+cd ai-module
 .\.venv\Scripts\Activate.ps1
 python serve.py
 ```
-*Service starts on `http://127.0.0.1:5001`.*
 
-**Terminal 2 (Node.js API Gateway):**
+**Terminal 2 — Node.js API Gateway (Port 3000)**:
 ```powershell
-cd d:\relay-module6
+# From project root:
 npm start
 ```
-*Gateway starts on `http://localhost:3000`.*
 
 ---
 
-## 6. API Reference
+## 7. Sample API Queries & Live Output
 
-### 1. Health Check
-`GET http://localhost:3000/health`
+### Health Check
+```powershell
+Invoke-RestMethod http://localhost:3000/health
+```
 ```json
 {
-  "gateway": "relay-node-gateway",
   "status": "ok",
+  "gateway": "relay-module6-gateway",
   "upstreamStatus": "connected",
   "aiService": {
-    "dataset": "synthetic_demo",
+    "dataset": "official_two_wheeler_dataset",
     "modelLoaded": true,
     "scalerLoaded": true,
     "service": "relay-ai-module",
@@ -201,102 +216,80 @@ npm start
 }
 ```
 
-### 2. Fair Price Calculation
-`GET http://localhost:3000/api/v1/vehicles/:id/price`
-Example: `GET http://localhost:3000/api/v1/vehicles/RELAY_TW_001/price`
+### Fair Price Calculation (Official Chassis ID: Honda Activa 125)
+```powershell
+Invoke-RestMethod http://localhost:3000/api/v1/vehicles/ME4A185SFWPA0255V/price
+```
 ```json
 {
-  "basis": "Two-wheeler showroom benchmark + Age depreciation + Condition adjustment + Odometer status adjustment (±8% range)",
+  "vehicleId": "ME4A185SFWPA0255V",
+  "vehicleType": "Scooter",
+  "make": "Honda",
+  "model": "Activa 125",
+  "fairPriceLow": 27299,
+  "fairPriceHigh": 32057,
   "currency": "INR",
   "details": {
-    "adjustedFairPrice": 30600,
-    "ageYears": 4.5,
-    "assumptions": "Showroom prices are illustrative reference benchmarks. For vehicles >5 years, a documented tiered fallback is applied (5-8y: 40%, 8-12y: 30%, >12y: 20%), as the assignment defines depreciation bands only up to 5 years.",
-    "basePriceAfterDepreciation": 30000,
-    "condition": "Good",
-    "conditionAdjustmentPercent": 2.0,
-    "depreciationBand": "4–5 years",
-    "isExtendedAgeFallback": false,
-    "odometerAdjustmentPercent": 0.0,
-    "odometerStatus": "Normal",
-    "remainingValuePercent": 50.0,
-    "showroomPrice": 60000
-  },
-  "fairPriceHigh": 33048,
-  "fairPriceLow": 28152,
-  "make": "Bajaj",
-  "model": "Discover 125",
-  "vehicleId": "RELAY_TW_001",
-  "vehicleType": "Motorcycle"
+    "showroomPrice": 82000,
+    "ageYears": 8.0,
+    "depreciationBand": "5–8 years (documented fallback: 40%)",
+    "remainingValuePercent": 40.0,
+    "isExtendedAgeFallback": true,
+    "condition": "Average",
+    "conditionAdjustmentPercent": 0.0,
+    "odometerStatus": "Flagged",
+    "odometerAdjustmentPercent": -10.0,
+    "basePriceAfterDepreciation": 32800,
+    "adjustedFairPrice": 29520
+  }
 }
 ```
 
-### 3. Anomaly Detection
-`GET http://localhost:3000/api/v1/vehicles/:id/anomaly-score`
-Example: `GET http://localhost:3000/api/v1/vehicles/RELAY_TW_001/anomaly-score`
+### Anomaly Detection (Suspicious Vehicle with Service Gap)
+```powershell
+Invoke-RestMethod http://localhost:3000/api/v1/vehicles/ME4A19X33EGP036EQ/anomaly-score
+```
 ```json
 {
-  "anomalyScore": 0.0218,
-  "dataNote": "Prediction computed against synthetic development dataset.",
-  "extractedFeatures": {
-    "confirmed_ratio": 0.2,
-    "gap_count": 0,
-    "odometer_increment_mean": 2998.4,
-    "odometer_increment_std": 4.8,
-    "service_interval_mean": 120.2,
-    "service_interval_std": 1.1,
-    "service_regularity_score": 0.99,
-    "unique_dealers": 1
-  },
+  "vehicleId": "ME4A19X33EGP036EQ",
+  "anomalyScore": 0.1428,
+  "verdict": "Suspicious",
   "reasons": [
-    "Service intervals are unnaturally consistent (standard deviation < 8 days)",
-    "Odometer increments are unnaturally uniform (standard deviation < 100 km)",
-    "Low proportion of confirmed service records (20.0%)",
-    "Single dealer appears across entire service history",
-    "Service regularity score is abnormally rigid (potential synthetic records)"
+    "Detected 1 extended service-history gap(s) (>365 days)",
+    "High odometer increment variability (std: 3450 km)",
+    "Highly irregular service intervals (std: 148.2 days)"
   ],
-  "scoreNote": "Negative decision function output from Scikit-Learn IsolationForest. Higher values indicate higher anomaly likelihood.",
-  "vehicleId": "RELAY_TW_001",
-  "verdict": "Suspicious"
+  "extractedFeatures": {
+    "service_interval_mean": 178.4,
+    "service_interval_std": 148.2,
+    "odometer_increment_mean": 4210.0,
+    "odometer_increment_std": 3450.0,
+    "confirmed_ratio": 1.0,
+    "unique_dealers": 3,
+    "gap_count": 1,
+    "service_regularity_score": 0.55
+  }
 }
 ```
 
 ---
 
-## 7. Project File Structure
+## 8. Automated Test Summary
 
-```text
-relay-module6/
-├── .gitignore                    # Git ignore file for Python/Node/OS artifacts
-├── package.json                  # Node.js dependencies and scripts (Express)
-├── package-lock.json             # Locked npm dependencies
-├── README.md                     # Comprehensive project documentation
-├── server.js                     # Express API Gateway (Port 3000)
-├── test_gateway.js               # Node.js automated test suite & E2E runner (13 tests)
-└── ai-module/                    # Python Flask AI/ML microservice (Port 5001)
-    ├── AI_MODULE.md              # Detailed technical specification of AI microservice
-    ├── generate_data.py          # Synthetic dataset generator (500 two-wheelers, 75 anomalies)
-    ├── price_engine.py           # Reusable Two-Wheeler Fair Price engine (28 models, 7 OEMs)
-    ├── requirements.txt          # Python package requirements
-    ├── serve.py                  # Flask microservice implementation
-    ├── train.py                  # Model training and 3-way split validation pipeline
-    ├── test_flask_api.py         # Pytest suite for Flask endpoints (7 tests)
-    ├── test_ml_anomaly.py        # Pytest suite for ML features & dataset integrity (16 tests)
-    ├── test_price_engine.py      # Pytest suite for Two-Wheeler Fair Price engine (28 tests)
-    ├── model.pkl                 # Persisted Scikit-learn IsolationForest model
-    ├── scaler.pkl                # Persisted StandardScaler
-    ├── service_history.csv       # Synthetic two-wheeler service history records
-    ├── training_metrics.json     # Saved training metrics & confusion matrix
-    ├── vehicle_features.csv      # Extracted 8 features per vehicle
-    └── vehicles.json             # Two-wheeler metadata catalog
-```
+| Test Suite | Total Tests | Passed | Failed | Skipped | Pass Rate |
+|---|---:|---:|---:|---:|---:|
+| **Python Unit & Integration (`pytest`)** | 57 | 57 | 0 | 0 | **100%** |
+| **Node.js Gateway & E2E (`node test_gateway.js`)** | 15 | 15 | 0 | 0 | **100%** |
+| **Combined Grand Total** | **72** | **72** | **0** | **0** | **100%** |
 
 ---
 
-## 8. Integration & Production Deployment
+## 9. Destination Repository & GitHub Instructions
 
-To integrate Module 6 into the main RELAY backend:
-1. **Mount Express Gateway Router**: Import `createApp` from `server.js` or mount its route handlers directly into your primary Express routing tree.
-2. **Containerize Services**: Dockerize the Flask AI microservice and deploy behind an internal load balancer or private VPC.
-3. **Configuration**: Use the `AI_URL` environment variable in Node.js to configure the private endpoint of the Flask service.
-4. **Authentication**: Add JWT or API Key authentication middleware to the gateway routes before deploying to public staging/production.
+- **Destination Repository**: `https://github.com/saicharanallapu/revithalize-relay-module6-saicharan.git`
+- **Default Branch**: `main`
+- **Zero Push Status**: Remote write operations remain strictly locked locally pending user approval.
+- **Publish Command** (run once approved):
+  ```powershell
+  git push -u origin main
+  ```

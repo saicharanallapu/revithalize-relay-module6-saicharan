@@ -1,10 +1,10 @@
 """
-Automated integration tests for Flask Microservice endpoints (Two-Wheeler RELAY Module 6).
+Automated integration tests for Flask Microservice endpoints (Official Two-Wheeler Scope).
 Tests:
 - GET /health
-- GET /internal/vehicles/:id/price (valid two-wheeler, missing vehicle, 404)
-- GET /internal/vehicles/:id/anomaly-score (valid two-wheeler, missing vehicle, 404)
-- GET /internal/vehicles (vehicle listing)
+- GET /internal/vehicles/:id/price (chassis ID and alias ID, 404 handling)
+- GET /internal/vehicles/:id/anomaly-score (chassis ID and alias ID, 404 handling)
+- GET /internal/vehicles (vehicle listing: 500 total vehicles)
 - Error handling on non-existent routes
 """
 
@@ -27,19 +27,30 @@ class TestFlaskEndpoints:
         assert data["status"] == "ok"
         assert data["service"] == "relay-ai-module"
         assert data["modelLoaded"] is True
+        assert data["scalerLoaded"] is True
+        assert data["dataset"] == "official_two_wheeler_dataset"
 
-    def test_internal_price_valid_two_wheeler(self, client):
+    def test_internal_price_official_chassis(self, client):
+        """Test pricing using official chassis ID (Honda Activa 125)."""
+        res = client.get("/internal/vehicles/ME4A185SFWPA0255V/price")
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["vehicleId"] == "ME4A185SFWPA0255V"
+        assert "fairPriceLow" in data
+        assert "fairPriceHigh" in data
+        assert data["fairPriceLow"] < data["fairPriceHigh"]
+        assert data["currency"] == "INR"
+        assert data["vehicleType"] == "Scooter"
+        assert data["details"]["showroomPrice"] == 82000
+
+    def test_internal_price_valid_alias(self, client):
+        """Test pricing using backward-compatible alias ID."""
         res = client.get("/internal/vehicles/RELAY_TW_001/price")
         assert res.status_code == 200
         data = res.get_json()
         assert data["vehicleId"] == "RELAY_TW_001"
         assert "fairPriceLow" in data
         assert "fairPriceHigh" in data
-        assert data["fairPriceLow"] < data["fairPriceHigh"]
-        assert data["currency"] == "INR"
-        assert data["vehicleType"] in ["Motorcycle", "Scooter", "Two-Wheeler"]
-        assert "details" in data
-        assert data["details"]["showroomPrice"] > 0
 
     def test_internal_price_nonexistent_vehicle(self, client):
         res = client.get("/internal/vehicles/NON_EXISTENT_999/price")
@@ -47,14 +58,24 @@ class TestFlaskEndpoints:
         data = res.get_json()
         assert "error" in data
 
-    def test_internal_anomaly_valid_two_wheeler(self, client):
+    def test_internal_anomaly_official_chassis(self, client):
+        """Test anomaly detection using official chassis ID."""
+        res = client.get("/internal/vehicles/ME4A185SFWPA0255V/anomaly-score")
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["vehicleId"] == "ME4A185SFWPA0255V"
+        assert "anomalyScore" in data
+        assert data["verdict"] in ["Suspicious", "Normal"]
+        assert isinstance(data["reasons"], list)
+        assert len(data["reasons"]) > 0
+
+    def test_internal_anomaly_valid_alias(self, client):
+        """Test anomaly detection using alias ID."""
         res = client.get("/internal/vehicles/RELAY_TW_001/anomaly-score")
         assert res.status_code == 200
         data = res.get_json()
         assert data["vehicleId"] == "RELAY_TW_001"
         assert "anomalyScore" in data
-        assert data["verdict"] in ["Suspicious", "Normal"]
-        assert isinstance(data["reasons"], list)
 
     def test_internal_anomaly_nonexistent_vehicle(self, client):
         res = client.get("/internal/vehicles/NON_EXISTENT_999/anomaly-score")

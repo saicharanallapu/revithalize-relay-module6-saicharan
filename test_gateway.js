@@ -168,6 +168,23 @@ async function runTests() {
     assert.strictEqual(aData100.vehicleId, "RELAY_TW_100");
     record("E2E GET /api/v1/vehicles/RELAY_TW_100/anomaly-score returns score and reasons", true);
 
+    // E2E Price endpoint for Official Chassis ID
+    const rPriceChassis = await fetch(`${liveBase}/api/v1/vehicles/ME4A185SFWPA0255V/price`);
+    assert.strictEqual(rPriceChassis.status, 200);
+    const pDataChassis = await rPriceChassis.json();
+    assert.strictEqual(pDataChassis.vehicleId, "ME4A185SFWPA0255V");
+    assert.strictEqual(pDataChassis.vehicleType, "Scooter");
+    assert.strictEqual(pDataChassis.details.showroomPrice, 82000);
+    record("E2E GET /api/v1/vehicles/ME4A185SFWPA0255V/price returns valid price for official chassis", true);
+
+    // E2E Anomaly Score for Official Chassis ID
+    const rAnomalyChassis = await fetch(`${liveBase}/api/v1/vehicles/ME4A185SFWPA0255V/anomaly-score`);
+    assert.strictEqual(rAnomalyChassis.status, 200);
+    const aDataChassis = await rAnomalyChassis.json();
+    assert.strictEqual(aDataChassis.vehicleId, "ME4A185SFWPA0255V");
+    assert.ok(["Suspicious", "Normal"].includes(aDataChassis.verdict));
+    record("E2E GET /api/v1/vehicles/ME4A185SFWPA0255V/anomaly-score returns evaluation for official chassis", true);
+
     // E2E Non-existent vehicle 404
     const rNotFound = await fetch(`${liveBase}/api/v1/vehicles/NON_EXISTENT_TW/price`);
     assert.strictEqual(rNotFound.status, 404);

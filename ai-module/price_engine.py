@@ -27,6 +27,7 @@ TWO_WHEELER_CATALOG: Dict[Tuple[str, str], Dict[str, Any]] = {
     ("Hero", "Xtreme 125R"): {"showroomPrice": 95000, "category": "Motorcycle", "introYear": 2024, "tier": "newer"},
 
     # --- Bajaj Auto (Older & Popular) ---
+    ("Bajaj", "CT100"): {"showroomPrice": 52000, "category": "Motorcycle", "introYear": 2001, "tier": "older"},
     ("Bajaj", "Pulsar 150"): {"showroomPrice": 110000, "category": "Motorcycle", "introYear": 2001, "tier": "older"},
     ("Bajaj", "Platina 100"): {"showroomPrice": 65000, "category": "Motorcycle", "introYear": 2006, "tier": "older"},
     ("Bajaj", "Discover 125"): {"showroomPrice": 60000, "category": "Motorcycle", "introYear": 2004, "tier": "older"},
@@ -38,6 +39,7 @@ TWO_WHEELER_CATALOG: Dict[Tuple[str, str], Dict[str, Any]] = {
     ("TVS", "Apache RTR 160"): {"showroomPrice": 120000, "category": "Motorcycle", "introYear": 2007, "tier": "older"},
     ("TVS", "Star City Plus"): {"showroomPrice": 75000, "category": "Motorcycle", "introYear": 2014, "tier": "older"},
     ("TVS", "Jupiter"): {"showroomPrice": 76000, "category": "Scooter", "introYear": 2013, "tier": "older"},
+    ("TVS", "Jupiter 125"): {"showroomPrice": 84000, "category": "Scooter", "introYear": 2021, "tier": "newer"},
     ("TVS", "Scooty Pep+"): {"showroomPrice": 65000, "category": "Scooter", "introYear": 2005, "tier": "older"},
     # --- TVS Motor (Newer) ---
     ("TVS", "Apache RTR 200 4V"): {"showroomPrice": 145000, "category": "Motorcycle", "introYear": 2016, "tier": "newer"},
@@ -45,7 +47,9 @@ TWO_WHEELER_CATALOG: Dict[Tuple[str, str], Dict[str, Any]] = {
 
     # --- Honda (Older & Popular) ---
     ("Honda", "Activa"): {"showroomPrice": 78000, "category": "Scooter", "introYear": 2001, "tier": "older"},
+    ("Honda", "Activa 125"): {"showroomPrice": 82000, "category": "Scooter", "introYear": 2014, "tier": "older"},
     ("Honda", "CB Shine 125"): {"showroomPrice": 80000, "category": "Motorcycle", "introYear": 2006, "tier": "older"},
+    ("Honda", "Shine 125"): {"showroomPrice": 80000, "category": "Motorcycle", "introYear": 2006, "tier": "older"},
     ("Honda", "Unicorn"): {"showroomPrice": 108000, "category": "Motorcycle", "introYear": 2004, "tier": "older"},
     # --- Honda (Newer) ---
     ("Honda", "SP 125"): {"showroomPrice": 86000, "category": "Motorcycle", "introYear": 2019, "tier": "newer"},
@@ -162,12 +166,12 @@ def calculate_fair_price(vehicle: Dict[str, Any]) -> Dict[str, Any]:
     - condition: 'Excellent' | 'Good' | 'Average' | 'Poor'
     - odometerStatus: 'Normal' | 'Flagged'
     """
-    vehicle_id = str(vehicle.get("id") or vehicle.get("vehicleId") or "").strip()
+    vehicle_id = str(vehicle.get("id") or vehicle.get("vehicleId") or vehicle.get("chassis") or "").strip()
     if not vehicle_id:
         raise ValueError("Missing required vehicle ID")
 
-    # Catalog lookup if make/model provided
-    make = vehicle.get("make")
+    # Catalog lookup if make/model provided (handles OEM as make fallback)
+    make = vehicle.get("make") or vehicle.get("oem")
     model = vehicle.get("model")
     catalog_info = None
     if make and model:
@@ -181,8 +185,14 @@ def calculate_fair_price(vehicle: Dict[str, Any]) -> Dict[str, Any]:
     if showroom_price is None or not isinstance(showroom_price, (int, float)) or showroom_price <= 0:
         raise ValueError(f"Invalid or missing showroomPrice: {showroom_price}")
 
-    # Age validation
+    # Age validation (supports ageYears or year e.g. 2021)
     age_years = vehicle.get("ageYears")
+    if age_years is None and vehicle.get("year"):
+        try:
+            age_years = max(0.0, float(2026 - int(vehicle.get("year"))))
+        except (ValueError, TypeError):
+            pass
+
     if age_years is None or not isinstance(age_years, (int, float)) or age_years < 0:
         raise ValueError(f"Invalid or missing ageYears: {age_years}")
 
@@ -192,8 +202,13 @@ def calculate_fair_price(vehicle: Dict[str, Any]) -> Dict[str, Any]:
         raise ValueError(f"Invalid condition '{condition_raw}'. Allowed: {list(CONDITION_ADJUSTMENTS.keys())}")
     condition_adj = CONDITION_ADJUSTMENTS[condition_raw]
 
-    # Odometer status validation
+    # Odometer status validation (maps Consistent -> Normal, Suspicious/Flagged -> Flagged if from dataset)
     odometer_raw = str(vehicle.get("odometerStatus", "Normal")).strip().capitalize()
+    if odometer_raw == "Consistent":
+        odometer_raw = "Normal"
+    elif odometer_raw == "Suspicious":
+        odometer_raw = "Flagged"
+
     if odometer_raw not in ODOMETER_ADJUSTMENTS:
         raise ValueError(f"Invalid odometerStatus '{odometer_raw}'. Allowed: {list(ODOMETER_ADJUSTMENTS.keys())}")
     odometer_adj = ODOMETER_ADJUSTMENTS[odometer_raw]
