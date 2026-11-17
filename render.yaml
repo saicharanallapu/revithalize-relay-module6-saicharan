@@ -21,15 +21,12 @@ services:
     region: oregon
     buildCommand: npm install
     startCommand: npm start
-    healthCheckPath: /health
+    healthCheckPath: /
     envVars:
       - key: NODE_VERSION
         value: 20.18.0
-      # Uses internal service hostport if supported by plan, or public URL fallback
+      # Connects directly to deployed Flask service over public HTTPS on Render Free tier
       - key: AI_URL
-        fromService:
-          type: web
-          name: relay-module6-ai
-          property: hostport
+        value: https://relay-module6-ai.onrender.com
       - key: AI_TIMEOUT_MS
         value: "30000"
