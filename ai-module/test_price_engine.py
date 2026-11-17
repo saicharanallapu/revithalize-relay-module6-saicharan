@@ -162,6 +162,12 @@ class TestFairPriceCalculations:
         assert calculate_fair_price({**base_bike, "condition": "Good"})["details"]["adjustedFairPrice"] == 81600
         # Average (0%): 80,000
         assert calculate_fair_price({**base_bike, "condition": "Average"})["details"]["adjustedFairPrice"] == 80000
+        assert calculate_fair_price({**base_bike, "condition": "Average"})["details"]["condition"] == "Average"
+        # Fair (documented compatibility alias for Average: 0%): 80,000
+        fair_res = calculate_fair_price({**base_bike, "condition": "Fair"})
+        assert fair_res["details"]["adjustedFairPrice"] == 80000
+        assert fair_res["details"]["condition"] == "Average"
+        assert fair_res["details"]["conditionAdjustmentPercent"] == 0.0
         # Poor (-8%): 80,000 * 0.92 = 73,600
         assert calculate_fair_price({**base_bike, "condition": "Poor"})["details"]["adjustedFairPrice"] == 73600
 

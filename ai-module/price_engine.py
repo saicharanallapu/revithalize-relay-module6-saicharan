@@ -196,10 +196,16 @@ def calculate_fair_price(vehicle: Dict[str, Any]) -> Dict[str, Any]:
     if age_years is None or not isinstance(age_years, (int, float)) or age_years < 0:
         raise ValueError(f"Invalid or missing ageYears: {age_years}")
 
-    # Condition validation
-    condition_raw = str(vehicle.get("condition", "Average")).strip().capitalize()
+    # Condition validation: Exact assignment tiers: Excellent (+5%), Good (+2%), Average (0%), Poor (-8%)
+    # Supports 'Fair' as a documented compatibility alias mapping to 'Average' (0%)
+    condition_input = str(vehicle.get("condition", "Average")).strip().capitalize()
+    if condition_input == "Fair":
+        condition_raw = "Average"
+    else:
+        condition_raw = condition_input
+
     if condition_raw not in CONDITION_ADJUSTMENTS:
-        raise ValueError(f"Invalid condition '{condition_raw}'. Allowed: {list(CONDITION_ADJUSTMENTS.keys())}")
+        raise ValueError(f"Invalid condition '{condition_input}'. Allowed: {list(CONDITION_ADJUSTMENTS.keys())} (or 'Fair' as alias for Average)")
     condition_adj = CONDITION_ADJUSTMENTS[condition_raw]
 
     # Odometer status validation (maps Consistent -> Normal, Suspicious/Flagged -> Flagged if from dataset)

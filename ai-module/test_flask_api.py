@@ -42,6 +42,12 @@ class TestFlaskEndpoints:
         assert data["currency"] == "INR"
         assert data["vehicleType"] == "Scooter"
         assert data["details"]["showroomPrice"] == 82000
+        assert data["details"]["condition"] == "Average"
+        assert data["details"]["conditionAdjustmentPercent"] == 0.0
+        # Verify exact ±8% tolerance range
+        baseline = data["details"]["adjustedFairPrice"]
+        assert data["fairPriceLow"] == round(baseline * 0.92)
+        assert data["fairPriceHigh"] == round(baseline * 1.08)
 
     def test_internal_price_valid_alias(self, client):
         """Test pricing using backward-compatible alias ID."""

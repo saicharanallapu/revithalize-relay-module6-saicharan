@@ -175,6 +175,10 @@ async function runTests() {
     assert.strictEqual(pDataChassis.vehicleId, "ME4A185SFWPA0255V");
     assert.strictEqual(pDataChassis.vehicleType, "Scooter");
     assert.strictEqual(pDataChassis.details.showroomPrice, 82000);
+    assert.strictEqual(pDataChassis.details.condition, "Average");
+    const baseline = pDataChassis.details.adjustedFairPrice;
+    assert.strictEqual(pDataChassis.fairPriceLow, Math.round(baseline * 0.92));
+    assert.strictEqual(pDataChassis.fairPriceHigh, Math.round(baseline * 1.08));
     record("E2E GET /api/v1/vehicles/ME4A185SFWPA0255V/price returns valid price for official chassis", true);
 
     // E2E Anomaly Score for Official Chassis ID
