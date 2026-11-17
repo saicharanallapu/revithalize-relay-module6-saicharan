@@ -1,0 +1,35 @@
+services:
+  # 1. Python Flask AI Microservice (Port determined by $PORT)
+  - type: web
+    name: relay-module6-ai
+    runtime: python
+    rootDir: ai-module
+    plan: free
+    region: oregon
+    buildCommand: pip install -r requirements.txt
+    startCommand: gunicorn --bind 0.0.0.0:$PORT --workers 1 --timeout 120 serve:app
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.11.9
+
+  # 2. Node.js API Gateway & Admin Dashboard (Port determined by $PORT)
+  - type: web
+    name: relay-module6-gateway
+    runtime: node
+    plan: free
+    region: oregon
+    buildCommand: npm install
+    startCommand: npm start
+    healthCheckPath: /health
+    envVars:
+      - key: NODE_VERSION
+        value: 20.18.0
+      # Uses internal service hostport if supported by plan, or public URL fallback
+      - key: AI_URL
+        fromService:
+          type: web
+          name: relay-module6-ai
+          property: hostport
+      - key: AI_TIMEOUT_MS
+        value: "30000"

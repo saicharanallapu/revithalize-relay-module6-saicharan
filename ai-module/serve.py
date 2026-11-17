@@ -6,6 +6,7 @@ using the official Indian two-wheeler dataset.
 The Node.js API Gateway proxies public requests to these internal routes.
 """
 
+import os
 import sys
 from pathlib import Path
 import json
@@ -363,4 +364,7 @@ def server_error(err):
 
 
 if __name__ == "__main__":
-    app.run(host="127.0.0.1", port=5001, debug=False)
+    port = int(os.environ.get("PORT", 5001))
+    host = os.environ.get("HOST", "0.0.0.0")
+    logger.info("Starting Flask AI microservice on %s:%d", host, port)
+    app.run(host=host, port=port, debug=False)
