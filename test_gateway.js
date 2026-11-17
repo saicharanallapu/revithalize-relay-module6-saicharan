@@ -64,22 +64,25 @@ async function runTests() {
 
   try {
     const rHealth = await fetch(`${offlineBase}/health`);
-    assert.strictEqual(rHealth.status, 503);
+    assert.strictEqual(rHealth.status, 200);
     const healthJson = await rHealth.json();
+    assert.strictEqual(healthJson.status, "ok");
     assert.strictEqual(healthJson.upstreamStatus, "disconnected");
-    record("Health check returns 503 when Flask upstream offline", true);
+    assert.strictEqual(healthJson.aiService, null);
+    record("Health check returns HTTP 200 with upstream disconnected when Flask offline", true);
+
+    const rRoot = await fetch(`${offlineBase}/`);
+    assert.strictEqual(rRoot.status, 200);
+    const rootJson = await rRoot.json();
+    assert.strictEqual(rootJson.status, "ok");
+    assert.strictEqual(rootJson.name, "RELAY Module 6 API Gateway");
+    record("Root endpoint responds immediately with HTTP 200 small JSON", true);
 
     const rPrice = await fetch(`${offlineBase}/api/v1/vehicles/RELAY_TW_001/price`);
     assert.strictEqual(rPrice.status, 502);
     const priceJson = await rPrice.json();
     assert.strictEqual(priceJson.error, "AI service unavailable");
     record("Price proxy returns 502 when Flask upstream unreachable", true);
-
-    const rRoot = await fetch(`${offlineBase}/`);
-    assert.strictEqual(rRoot.status, 200);
-    const rootJson = await rRoot.json();
-    assert.strictEqual(rootJson.name, "RELAY Module 6 API Gateway");
-    record("Root endpoint returns API description", true);
 
     const rInvalidId = await fetch(`${offlineBase}/api/v1/vehicles/bad$id!/price`);
     assert.strictEqual(rInvalidId.status, 400);
@@ -129,6 +132,14 @@ async function runTests() {
     assert.strictEqual(hData.upstreamStatus, "connected");
     assert.strictEqual(hData.aiService.status, "ok");
     record("E2E Gateway /health reports status:ok and upstream:connected", true);
+
+    // E2E Root endpoint responds immediately with HTTP 200 without calling Flask
+    const rLiveRoot = await fetch(`${liveBase}/`);
+    assert.strictEqual(rLiveRoot.status, 200);
+    const liveRootJson = await rLiveRoot.json();
+    assert.strictEqual(liveRootJson.status, "ok");
+    assert.strictEqual(liveRootJson.name, "RELAY Module 6 API Gateway");
+    record("E2E Gateway / responds immediately with HTTP 200 small JSON", true);
 
     // E2E Price endpoint for RELAY_TW_001
     const rPrice = await fetch(`${liveBase}/api/v1/vehicles/RELAY_TW_001/price`);

@@ -57,28 +57,46 @@ function createApp(aiUrl = process.env.AI_URL || "http://127.0.0.1:5001") {
     }
   }
 
-  // Gateway health check
+  // Gateway health check - responds immediately with HTTP 200 and reports upstream connectivity
   app.get("/health", async (_req, res) => {
+    let upstreamStatus = "disconnected";
+    let aiService = null;
+
     try {
-      const response = await fetch(`${normalizedAiUrl}/health`, { signal: AbortSignal.timeout(10000) });
-      const aiData = await response.json();
-      return res.status(200).json({
-        status: "ok",
-        gateway: "relay-node-gateway",
-        upstreamStatus: "connected",
-        upstreamUrl: normalizedAiUrl,
-        aiService: aiData
+      const response = await fetch(`${normalizedAiUrl}/health`, {
+        headers: { "Accept": "application/json" },
+        signal: AbortSignal.timeout(2500)
       });
-    } catch (err) {
-      return res.status(503).json({
-        status: "degraded",
-        gateway: "relay-node-gateway",
-        upstreamStatus: "disconnected",
-        upstreamUrl: normalizedAiUrl,
-        details: "AI service unreachable"
-      });
+      if (response.ok) {
+        aiService = await response.json();
+        upstreamStatus = "connected";
+      }
+    } catch {
+      upstreamStatus = "disconnected";
     }
+
+    return res.status(200).json({
+      status: "ok",
+      gateway: "relay-node-gateway",
+      upstreamStatus,
+      upstreamUrl: normalizedAiUrl,
+      aiService
+    });
   });
+
+  // Root endpoint - responds immediately with HTTP 200 and small JSON without calling Flask
+  app.get("/", (_req, res) => res.status(200).json({
+    status: "ok",
+    name: "RELAY Module 6 API Gateway",
+    version: "1.0.0",
+    endpoints: [
+      "GET /health",
+      "GET /admin",
+      "GET /api/v1/admin/flagged-vehicles",
+      "GET /api/v1/vehicles/:id/price",
+      "GET /api/v1/vehicles/:id/anomaly-score"
+    ]
+  }));
 
   // Fair Price Endpoint
   app.get("/api/v1/vehicles/:id/price", validateVehicleId, (req, res) =>
@@ -101,19 +119,6 @@ function createApp(aiUrl = process.env.AI_URL || "http://127.0.0.1:5001") {
     res.sendFile(path.join(__dirname, "public", "admin.html"));
   });
 
-  // Root endpoint info
-  app.get("/", (_req, res) => res.json({
-    name: "RELAY Module 6 API Gateway",
-    version: "1.0.0",
-    endpoints: [
-      "GET /health",
-      "GET /admin",
-      "GET /api/v1/admin/flagged-vehicles",
-      "GET /api/v1/vehicles/:id/price",
-      "GET /api/v1/vehicles/:id/anomaly-score"
-    ]
-  }));
-
   // 404 handler for undefined routes
   app.use((_req, res) => {
     res.status(404).json({ error: "Endpoint not found" });
@@ -123,8 +128,8 @@ function createApp(aiUrl = process.env.AI_URL || "http://127.0.0.1:5001") {
 }
 
 const app = createApp();
-const PORT = process.env.PORT || 3000;
-const HOST = process.env.HOST || "0.0.0.0";
+const PORT = process.env.PORT ? parseInt(process.env.PORT, 10) : 3000;
+const HOST = "0.0.0.0";
 
 if (require.main === module) {
   app.listen(PORT, HOST, () => {
