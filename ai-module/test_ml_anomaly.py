@@ -2,11 +2,13 @@
 Automated unit tests for Two-Wheeler ML Anomaly Detection (RELAY Module 6).
 Tests:
 - Official dataset integrity: 500 two-wheelers, 75 anomalies, 0 cars/SUVs
+- Confirmed ground truth labels: 425 confirmed normal vehicles, 75 confirmed anomalies
 - Age distribution: 72% older than 3 years (2018-2022)
 - Model distribution: 80% older models (400) vs 20% newer models (100)
 - Manufacturing years range: 2018 to 2024
 - 8 required features extraction from two-wheeler histories
 - Edge cases: empty history, 1 record
+- Deterministic rollback detection: negative increment, monotonic, multiple, missing
 - Model & scaler compatibility and persistence
 - Inference & explainable anomaly reasons (chassis & alias)
 - 3-way split training metrics verification on official dataset
@@ -19,7 +21,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from generate_data import extract_features
+from generate_data import extract_features, check_odometer_rollback
 from serve import get_anomaly_evaluation, FEATURES
 
 BASE = Path(__file__).resolve().parent
@@ -64,6 +66,12 @@ class TestTwoWheelerDatasetIntegrity:
         normal_count = 500 - anomalies_count
         assert normal_count == 425
 
+    def test_confirmed_normal_labels(self):
+        """Verify dataset owner's authoritative confirmation: 425 confirmed normal records."""
+        counts = self.features_df["label_status"].value_counts()
+        assert counts["confirmed_normal"] == 425
+        assert counts["confirmed_anomaly"] == 75
+
     def test_anomaly_subtypes_present(self):
         """Verify all three seeded anomaly subtypes are present (25 each)."""
         counts = self.features_df["anomaly_type"].value_counts()
@@ -100,6 +108,61 @@ class TestTwoWheelerDatasetIntegrity:
         """Verify all vehicles were built between 2018 and 2024."""
         years = set(v["year"] for v in self.vehicles)
         assert years == {2018, 2019, 2020, 2021, 2022, 2023, 2024}
+
+
+class TestDeterministicRollbackDetection:
+    def test_rollback_detected_on_negative_increment(self):
+        history = [
+            {"serviceDate": "2022-01-10", "odometerKm": 15000},
+            {"serviceDate": "2022-06-15", "odometerKm": 12000},  # Negative step (-3,000 km)
+            {"serviceDate": "2022-11-20", "odometerKm": 18000},
+        ]
+        res = check_odometer_rollback(history)
+        assert res["hasNegativeIncrement"] is True
+        assert res["rollbackWarning"] is True
+        assert res["negativeIncrementCount"] == 1
+        assert res["minIncrementKm"] == -3000.0
+        assert "Odometer rollback warning" in res["warningMessage"]
+
+    def test_no_rollback_on_monotonic_history(self):
+        history = [
+            {"serviceDate": "2022-01-10", "odometerKm": 3000},
+            {"serviceDate": "2022-06-15", "odometerKm": 6500},
+            {"serviceDate": "2022-11-20", "odometerKm": 9800},
+        ]
+        res = check_odometer_rollback(history)
+        assert res["hasNegativeIncrement"] is False
+        assert res["rollbackWarning"] is False
+        assert res["negativeIncrementCount"] == 0
+        assert res["minIncrementKm"] == 3300.0
+        assert res["warningMessage"] is None
+
+    def test_multiple_service_records_handles_correctly(self):
+        history = [
+            {"serviceDate": f"202{i//2}-{(i%12)+1:02d}-15", "odometerKm": 3000 * (i + 1) if i != 5 else 12000}
+            for i in range(10)
+        ]
+        res = check_odometer_rollback(history)
+        assert res["hasNegativeIncrement"] is True
+        assert res["rollbackWarning"] is True
+
+    def test_missing_and_single_service_histories(self):
+        assert check_odometer_rollback([])["rollbackWarning"] is False
+        assert check_odometer_rollback([{"serviceDate": "2022-01-10", "odometerKm": 5000}])["rollbackWarning"] is False
+
+    def test_all_25_dataset_rollbacks_flagged(self):
+        vehicles_path = BASE / "vehicles.json"
+        vehicles = json.loads(vehicles_path.read_text(encoding="utf-8"))
+        for v in vehicles:
+            diag = v["deterministicRollbackCheck"]
+            if v["anomaly"] == "rollback":
+                assert diag["hasNegativeIncrement"] is True
+                assert diag["rollbackWarning"] is True
+                assert diag["negativeIncrementCount"] == 1
+                assert diag["minIncrementKm"] < 0
+            else:
+                assert diag["hasNegativeIncrement"] is False
+                assert diag["rollbackWarning"] is False
 
 
 class TestFeatureExtraction:
@@ -178,7 +241,7 @@ class TestModelAndInference:
         assert pred in [1, -1]
 
     def test_evaluation_reasons_and_verdict_by_chassis(self):
-        # Test first vehicle using official chassis ID
+        # Test first vehicle using official chassis ID (rollback anomaly)
         chassis_id = "ME4A185SFWPA0255V"
         eval_res = get_anomaly_evaluation(chassis_id)
         assert eval_res is not None
@@ -187,6 +250,9 @@ class TestModelAndInference:
         assert isinstance(eval_res["reasons"], list)
         assert len(eval_res["reasons"]) > 0
         assert "anomalyScore" in eval_res
+        assert "mlEvaluation" in eval_res
+        assert "deterministicChecks" in eval_res
+        assert eval_res["deterministicChecks"]["rollbackWarning"] is True
 
     def test_evaluation_reasons_and_verdict_by_alias(self):
         # Test alias ID for backward compatibility
@@ -211,6 +277,7 @@ class TestModelAndInference:
         assert "recall" in test_m
         assert "precision" in test_m
         assert "f1_score" in test_m
+        assert test_m["recall"] >= 0.70
         assert "confusion_matrix_labels_0_normal_1_anomaly" in test_m
         assert "classification_report" in test_m
         assert "subtype_breakdown" in test_m

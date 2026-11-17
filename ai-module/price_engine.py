@@ -219,6 +219,24 @@ def calculate_fair_price(vehicle: Dict[str, Any]) -> Dict[str, Any]:
         category = catalog_info["category"]
     category = category or "Two-Wheeler"
 
+    # Historical timeline plausibility check
+    intro_year = catalog_info.get("introYear") if catalog_info else None
+    veh_year = vehicle.get("year")
+    is_plausible_model_year = True
+    quality_warnings = []
+    if intro_year and veh_year:
+        try:
+            year_int = int(veh_year)
+            if year_int < intro_year:
+                is_plausible_model_year = False
+                quality_warnings.append(
+                    f"Historical launch discrepancy: {catalog_info['make']} {catalog_info['model']} "
+                    f"was introduced in {intro_year}, but record specifies year {year_int}. "
+                    "Price calculated based on recorded year; registration verification recommended."
+                )
+        except (ValueError, TypeError):
+            pass
+
     # 1. Depreciation calculation
     deprec_ratio, deprec_band, is_extended = get_depreciation_ratio(float(age_years))
     price_after_deprec = float(showroom_price) * deprec_ratio
@@ -254,6 +272,8 @@ def calculate_fair_price(vehicle: Dict[str, Any]) -> Dict[str, Any]:
             "odometerAdjustmentPercent": round(odometer_adj * 100, 1),
             "basePriceAfterDepreciation": int(round(price_after_deprec)),
             "adjustedFairPrice": int(round(final_adjusted)),
+            "isPlausibleModelYear": is_plausible_model_year,
+            "qualityWarnings": quality_warnings,
             "assumptions": (
                 "Showroom prices are illustrative reference benchmarks. "
                 "For vehicles >5 years, a documented tiered fallback is applied (5-8y: 40%, 8-12y: 30%, >12y: 20%), "

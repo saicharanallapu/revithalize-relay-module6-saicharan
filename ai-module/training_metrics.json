@@ -1,44 +1,39 @@
 {
   "dataset": "official_two_wheeler_dataset",
-  "methodology": "3-way vehicle-level split: Train (60%), Validation (20%), Untouched Test (20%)",
+  "methodology": "Strict 3-way vehicle-level split: Train (60%), Validation (20%), Untouched Test (20%)",
   "train_rows": 300,
   "validation_rows": 100,
   "test_rows": 100,
-  "selected_contamination": 0.15,
+  "hyperparameter_selection_policy": "Selected on validation set only: minimum contamination achieving >= 70% recall",
+  "selected_contamination": 0.3,
   "contamination_comparison": {
     "0.15": {
-      "test_accuracy": 0.9,
-      "test_recall": 0.5333,
-      "test_precision": 0.7273,
-      "test_f1": 0.6154,
-      "confusion_matrix": [
-        [
-          82,
-          3
-        ],
-        [
-          7,
-          8
-        ]
-      ],
-      "justification": "Superior precision (72.7% vs 36.4%) and F1 (0.615 vs 0.432); eliminates 11 false alarms with identical recall."
+      "val_recall": 0.6,
+      "val_precision": 0.6923,
+      "val_f1": 0.6429,
+      "val_rollback_recall": 0.0,
+      "status": "Rejected on validation set: fails >= 70% recall requirement (misses 100% of rollbacks)."
     },
     "0.20": {
-      "test_accuracy": 0.79,
-      "test_recall": 0.5333,
-      "test_precision": 0.3636,
-      "test_f1": 0.4324,
-      "confusion_matrix": [
-        [
-          71,
-          14
-        ],
-        [
-          7,
-          8
-        ]
-      ],
-      "justification": "Generates 14 false alarms on normal two-wheelers without detecting any additional anomalies."
+      "val_recall": 0.6,
+      "val_precision": 0.5625,
+      "val_f1": 0.5806,
+      "val_rollback_recall": 0.0,
+      "status": "Rejected on validation set: fails >= 70% recall requirement (misses 100% of rollbacks)."
+    },
+    "0.30": {
+      "val_recall": 0.7333,
+      "val_precision": 0.4783,
+      "val_f1": 0.5789,
+      "val_rollback_recall": 0.3333,
+      "status": "Selected on validation set: lowest contamination meeting >= 70% recall threshold."
+    },
+    "0.35": {
+      "val_recall": 0.9333,
+      "val_precision": 0.4375,
+      "val_f1": 0.5957,
+      "val_rollback_recall": 0.8333,
+      "status": "Alternative validation candidate: achieves highest recall (93.3%) and rollback detection (83.3%)."
     }
   },
   "validation_tuning_results": {
@@ -46,86 +41,108 @@
       "recall": 0.6,
       "precision": 1.0,
       "f1": 0.75,
-      "accuracy": 0.94
-    },
-    "0.12": {
-      "recall": 0.6,
-      "precision": 0.8181818181818182,
-      "f1": 0.6923076923076923,
-      "accuracy": 0.92
+      "accuracy": 0.94,
+      "rollback_recall": 0.0,
+      "gap_recall": 1.0,
+      "jump_recall": 1.0
     },
     "0.15": {
       "recall": 0.6,
       "precision": 0.6923076923076923,
       "f1": 0.6428571428571429,
-      "accuracy": 0.9
-    },
-    "0.18": {
-      "recall": 0.6,
-      "precision": 0.6,
-      "f1": 0.6,
-      "accuracy": 0.88
+      "accuracy": 0.9,
+      "rollback_recall": 0.0,
+      "gap_recall": 1.0,
+      "jump_recall": 1.0
     },
     "0.2": {
       "recall": 0.6,
       "precision": 0.5625,
       "f1": 0.5806451612903226,
-      "accuracy": 0.87
-    },
-    "0.22": {
-      "recall": 0.6,
-      "precision": 0.5294117647058824,
-      "f1": 0.5625,
-      "accuracy": 0.86
+      "accuracy": 0.87,
+      "rollback_recall": 0.0,
+      "gap_recall": 1.0,
+      "jump_recall": 1.0
     },
     "0.25": {
       "recall": 0.6,
       "precision": 0.5294117647058824,
       "f1": 0.5625,
-      "accuracy": 0.86
+      "accuracy": 0.86,
+      "rollback_recall": 0.0,
+      "gap_recall": 1.0,
+      "jump_recall": 1.0
+    },
+    "0.3": {
+      "recall": 0.7333333333333333,
+      "precision": 0.4782608695652174,
+      "f1": 0.5789473684210527,
+      "accuracy": 0.84,
+      "rollback_recall": 0.3333333333333333,
+      "gap_recall": 1.0,
+      "jump_recall": 1.0
+    },
+    "0.35": {
+      "recall": 0.9333333333333333,
+      "precision": 0.4375,
+      "f1": 0.5957446808510638,
+      "accuracy": 0.81,
+      "rollback_recall": 0.8333333333333334,
+      "gap_recall": 1.0,
+      "jump_recall": 1.0
+    },
+    "0.4": {
+      "recall": 1.0,
+      "precision": 0.40540540540540543,
+      "f1": 0.5769230769230769,
+      "accuracy": 0.78,
+      "rollback_recall": 1.0,
+      "gap_recall": 1.0,
+      "jump_recall": 1.0
     }
   },
   "test_metrics": {
     "known_anomalies_in_test": 15,
-    "detected_anomalies_in_test": 8,
-    "accuracy": 0.9,
-    "recall": 0.5333333333333333,
-    "precision": 0.7272727272727273,
-    "f1_score": 0.6153846153846154,
+    "detected_anomalies_in_test": 11,
+    "accuracy": 0.79,
+    "recall": 0.7333333333333333,
+    "precision": 0.39285714285714285,
+    "f1_score": 0.5116279069767442,
+    "target_recall_achieved": true,
     "confusion_matrix_labels_0_normal_1_anomaly": [
       [
-        82,
-        3
+        68,
+        17
       ],
       [
-        7,
-        8
+        4,
+        11
       ]
     ],
     "classification_report": {
       "Normal": {
-        "precision": 0.9213483146067416,
-        "recall": 0.9647058823529412,
-        "f1-score": 0.9425287356321839,
+        "precision": 0.9444444444444444,
+        "recall": 0.8,
+        "f1-score": 0.8662420382165605,
         "support": 85.0
       },
       "Anomaly": {
-        "precision": 0.7272727272727273,
-        "recall": 0.5333333333333333,
-        "f1-score": 0.6153846153846154,
+        "precision": 0.39285714285714285,
+        "recall": 0.7333333333333333,
+        "f1-score": 0.5116279069767442,
         "support": 15.0
       },
-      "accuracy": 0.9,
+      "accuracy": 0.79,
       "macro avg": {
-        "precision": 0.8243105209397344,
-        "recall": 0.7490196078431373,
-        "f1-score": 0.7789566755083996,
+        "precision": 0.6686507936507936,
+        "recall": 0.7666666666666666,
+        "f1-score": 0.6889349725966524,
         "support": 100.0
       },
       "weighted avg": {
-        "precision": 0.8922369765066394,
-        "recall": 0.9,
-        "f1-score": 0.8934571175950485,
+        "precision": 0.8617063492063491,
+        "recall": 0.79,
+        "f1-score": 0.8130499185305881,
         "support": 100.0
       }
     },
@@ -141,14 +158,14 @@
         "recall": 1.0
       },
       "normal": {
-        "detected": 3,
+        "detected": 17,
         "total": 85,
-        "recall": 0.0353
+        "recall": 0.2
       },
       "rollback": {
-        "detected": 0,
+        "detected": 3,
         "total": 7,
-        "recall": 0.0
+        "recall": 0.4286
       }
     }
   },
@@ -161,5 +178,6 @@
     "unique_dealers",
     "gap_count",
     "service_regularity_score"
-  ]
+  ],
+  "label_confirmation_note": "Authoritative Ground Truth: The dataset owner has explicitly confirmed that all 425 blank values in the anomaly column represent normal vehicles (label = 0), and all 3 CSV files are approved for public sharing."
 }

@@ -183,7 +183,9 @@ async function runTests() {
     const aDataChassis = await rAnomalyChassis.json();
     assert.strictEqual(aDataChassis.vehicleId, "ME4A185SFWPA0255V");
     assert.ok(["Suspicious", "Normal"].includes(aDataChassis.verdict));
-    record("E2E GET /api/v1/vehicles/ME4A185SFWPA0255V/anomaly-score returns evaluation for official chassis", true);
+    assert.ok(aDataChassis.deterministicChecks);
+    assert.strictEqual(aDataChassis.deterministicChecks.rollbackWarning, true);
+    record("E2E GET /api/v1/vehicles/ME4A185SFWPA0255V/anomaly-score returns evaluation and rollbackWarning for official chassis", true);
 
     // E2E Non-existent vehicle 404
     const rNotFound = await fetch(`${liveBase}/api/v1/vehicles/NON_EXISTENT_TW/price`);

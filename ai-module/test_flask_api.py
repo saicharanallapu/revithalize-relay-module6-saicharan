@@ -69,6 +69,35 @@ class TestFlaskEndpoints:
         assert isinstance(data["reasons"], list)
         assert len(data["reasons"]) > 0
 
+    def test_internal_anomaly_deterministic_checks_rollback_vehicle(self, client):
+        """Verify API returns deterministic rollback warning for vehicle with negative odometer increments."""
+        res = client.get("/internal/vehicles/ME4A185SFWPA0255V/anomaly-score")
+        assert res.status_code == 200
+        data = res.get_json()
+        assert "deterministicChecks" in data
+        dc = data["deterministicChecks"]
+        assert dc["rollbackWarning"] is True
+        assert dc["hasNegativeIncrement"] is True
+        assert dc["negativeIncrementCount"] == 1
+        assert dc["minIncrementKm"] < 0
+        assert dc["warningMessage"] is not None
+        assert "Odometer rollback warning" in dc["warningMessage"]
+        # Verify ML evaluation is also provided separately
+        assert "mlEvaluation" in data
+        assert data["mlEvaluation"]["model"] == "IsolationForest"
+
+    def test_internal_anomaly_deterministic_checks_normal_vehicle(self, client):
+        """Verify API returns no rollback warning for a normal vehicle."""
+        res = client.get("/internal/vehicles/ME4A23AYVN1T07BE6/anomaly-score")
+        assert res.status_code == 200
+        data = res.get_json()
+        assert "deterministicChecks" in data
+        dc = data["deterministicChecks"]
+        assert dc["rollbackWarning"] is False
+        assert dc["hasNegativeIncrement"] is False
+        assert dc["negativeIncrementCount"] == 0
+        assert dc["warningMessage"] is None
+
     def test_internal_anomaly_valid_alias(self, client):
         """Test anomaly detection using alias ID."""
         res = client.get("/internal/vehicles/RELAY_TW_001/anomaly-score")

@@ -155,12 +155,37 @@ def get_anomaly_evaluation(vehicle_id: str) -> dict:
     else:
         reasons.append("Service history intervals, dealer distribution, and odometer steps conform to standard patterns")
 
+    vehicle_info = resolve_vehicle(vehicle_id)
+    rollback_check = vehicle_info.get("deterministicRollbackCheck") if vehicle_info else None
+    if not rollback_check:
+        rollback_check = {
+            "hasNegativeIncrement": False,
+            "negativeIncrementCount": 0,
+            "minIncrementKm": 0.0,
+            "rollbackWarning": False,
+            "warningMessage": None,
+        }
+
     return {
         "vehicleId": vehicle_id,
         "anomalyScore": round(-raw_decision_score, 4),
         "verdict": "Suspicious" if is_anomaly else "Normal",
         "reasons": reasons,
         "extractedFeatures": {col: round(float(row[col]), 2) for col in FEATURES},
+        "mlEvaluation": {
+            "model": "IsolationForest",
+            "anomalyScore": round(-raw_decision_score, 4),
+            "verdict": "Suspicious" if is_anomaly else "Normal",
+            "scoreNote": "Negative decision function output from Scikit-Learn IsolationForest. Higher values indicate higher anomaly likelihood."
+        },
+        "deterministicChecks": {
+            "hasNegativeIncrement": rollback_check.get("hasNegativeIncrement", False),
+            "negativeIncrementCount": rollback_check.get("negativeIncrementCount", 0),
+            "minIncrementKm": rollback_check.get("minIncrementKm", 0.0),
+            "rollbackWarning": rollback_check.get("rollbackWarning", False),
+            "warningMessage": rollback_check.get("warningMessage"),
+            "note": "Deterministic physical check for chronological negative odometer changes. A negative change flags a rollback warning requiring document verification."
+        },
         "scoreNote": "Negative decision function output from Scikit-Learn IsolationForest. Higher values indicate higher anomaly likelihood.",
         "dataNote": "Prediction computed using Isolation Forest trained on official two-wheeler dataset."
     }

@@ -77,6 +77,47 @@ def extract_features(history):
     }
 
 
+def check_odometer_rollback(history) -> dict:
+    """
+    Deterministic physical rollback inspection:
+    Checks if consecutive chronological service events have negative odometer increments.
+    Does not assume fraud; flags a rollback warning requiring document verification.
+    """
+    if not history or len(history) < 2:
+        return {
+            "hasNegativeIncrement": False,
+            "negativeIncrementCount": 0,
+            "minIncrementKm": 0.0,
+            "rollbackWarning": False,
+            "warningMessage": None
+        }
+
+    h_sorted = sorted(history, key=lambda x: str(x.get("serviceDate", "")))
+    odos = np.array([float(x.get("odometerKm", 0)) for x in h_sorted], dtype=float)
+    increments = np.diff(odos)
+    negative_diffs = increments[increments < 0]
+
+    has_neg = bool(len(negative_diffs) > 0)
+    min_inc = float(np.min(increments)) if len(increments) else 0.0
+    neg_count = int(len(negative_diffs))
+
+    msg = None
+    if has_neg:
+        msg = (
+            f"Odometer rollback warning: Detected {neg_count} negative odometer increment(s) "
+            f"(minimum step: {min_inc:.0f} km). This indicates a chronological meter reduction; "
+            "verify physical service logs and meter replacement records."
+        )
+
+    return {
+        "hasNegativeIncrement": has_neg,
+        "negativeIncrementCount": neg_count,
+        "minIncrementKm": min_inc,
+        "rollbackWarning": has_neg,
+        "warningMessage": msg
+    }
+
+
 def map_condition_from_care_score(care_score: float) -> str:
     """
     Map continuous careScore (0-100) to the 4 discrete condition tiers
@@ -180,6 +221,13 @@ def process_official_data():
         v_services = services_by_chassis.get(chassis, [])
         v_features = extract_features(v_services)
 
+        # Deterministic physical rollback inspection
+        rollback_diag = check_odometer_rollback(v_services)
+
+        # Label status confirmed by dataset owner: blanks mean normal vehicles
+        label_status = "confirmed_anomaly" if has_anomaly else "confirmed_normal"
+        is_plausible_year = bool(intro_year <= year)
+
         for s in v_services:
             normalized_service_records.append({
                 "vehicleId": chassis,
@@ -193,6 +241,11 @@ def process_official_data():
             **v_features,
             "label": 1 if has_anomaly else 0,
             "anomaly_type": anomaly_type,
+            "label_status": label_status,
+            "has_negative_increment": rollback_diag["hasNegativeIncrement"],
+            "negative_increment_count": rollback_diag["negativeIncrementCount"],
+            "min_increment_km": rollback_diag["minIncrementKm"],
+            "is_plausible_model_year": is_plausible_year,
             "odometer_status": odometer_status,
         }
         feature_rows.append(feature_row)
@@ -211,6 +264,7 @@ def process_official_data():
             "vehicleType": category,
             "tier": tier,
             "introYear": intro_year,
+            "isPlausibleModelYear": is_plausible_year,
             "showroomPrice": showroom_price,
             "ageYears": age_years,
             "condition": condition,
@@ -219,6 +273,8 @@ def process_official_data():
             "careScore": care_score,
             "flagCount": flag_count,
             "anomaly": anomaly_type if has_anomaly else None,
+            "labelStatus": label_status,
+            "deterministicRollbackCheck": rollback_diag,
             "isAnomaly": has_anomaly,
         }
         vehicles_list.append(vehicle_dict)

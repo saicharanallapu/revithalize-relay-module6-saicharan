@@ -1,15 +1,17 @@
 """
-Train Isolation Forest on Official Two-Wheeler Dataset using a 3-way split.
+Train Isolation Forest on Official Two-Wheeler Dataset using a rigorous 3-way split.
 
-Methodology:
+Methodology Rules:
 1. Stratified vehicle-level split:
-   - Training Set: 60% (300 vehicles: 255 normal, 45 anomalies)
-   - Validation Set: 20% (100 vehicles: 85 normal, 15 anomalies)
-   - Untouched Test Set: 20% (100 vehicles: 85 normal, 15 anomalies)
-2. StandardScaler is fitted strictly on the Training set (zero data leakage).
-3. Validation set is used to evaluate candidate contamination parameters (e.g. 0.15 vs 0.20).
-4. The best justified model is evaluated ONCE on the held-out untouched Test set.
-5. Anomaly breakdown by subtype (rollback, gap, jump) is reported.
+   - Training Set: 60% (300 vehicles: 255 unlabelled assumed normal, 45 labelled anomalies)
+   - Validation Set: 20% (100 vehicles: 85 unlabelled assumed normal, 15 labelled anomalies)
+   - Untouched Test Set: 20% (100 vehicles: 85 unlabelled assumed normal, 15 labelled anomalies)
+2. StandardScaler is fitted STRICTLY on training data (zero leakage into validation or test).
+3. Candidate Isolation Forest models are trained on training data only.
+4. Hyperparameter tuning (contamination selection) is performed SOLELY on validation data.
+5. The model configuration is frozen based on validation performance.
+6. The selected model is evaluated EXACTLY ONCE on the held-out untouched test set.
+7. Test results never influence model selection or hyperparameter tuning.
 """
 
 from pathlib import Path
@@ -66,38 +68,57 @@ def train_and_evaluate():
     X_val_scaled = scaler.transform(X_val)
     X_test_scaled = scaler.transform(X_test)
 
-    # 4. Validation tuning across candidate contamination values
-    val_candidates = [0.10, 0.12, 0.15, 0.18, 0.20, 0.22, 0.25]
+    # 4. Validation tuning across candidate contamination values using ONLY validation data
+    val_candidates = [0.10, 0.15, 0.20, 0.25, 0.30, 0.35, 0.40]
     val_metrics = {}
+    val_df = df.loc[X_val.index].copy()
 
-    print("=== Validation Set Contamination Tuning ===")
+    print("=== Validation Set Contamination Tuning (Validation Data ONLY) ===")
     for c in val_candidates:
         temp_model = IsolationForest(n_estimators=300, contamination=c, random_state=42)
         temp_model.fit(X_train_scaled)
         v_preds = (temp_model.predict(X_val_scaled) == -1).astype(int)
+
         v_rec = float(recall_score(y_val, v_preds, zero_division=0))
         v_prec = float(precision_score(y_val, v_preds, zero_division=0))
         v_f1 = float(f1_score(y_val, v_preds, zero_division=0))
         v_acc = float(accuracy_score(y_val, v_preds))
+
+        val_df["pred"] = v_preds
+        rb_rec = float(val_df[val_df["anomaly_type"] == "rollback"]["pred"].mean()) if (val_df["anomaly_type"] == "rollback").sum() > 0 else 0.0
+        gap_rec = float(val_df[val_df["anomaly_type"] == "gap"]["pred"].mean()) if (val_df["anomaly_type"] == "gap").sum() > 0 else 0.0
+        jmp_rec = float(val_df[val_df["anomaly_type"] == "jump"]["pred"].mean()) if (val_df["anomaly_type"] == "jump").sum() > 0 else 0.0
+
         val_metrics[str(c)] = {
             "recall": v_rec,
             "precision": v_prec,
             "f1": v_f1,
             "accuracy": v_acc,
+            "rollback_recall": rb_rec,
+            "gap_recall": gap_rec,
+            "jump_recall": jmp_rec,
         }
-        print(f"  Contamination: {c:.2f} -> Val Recall: {v_rec:.1%}, Precision: {v_prec:.1%}, F1: {v_f1:.4f}, Acc: {v_acc:.1%}")
+        print(
+            f"  Contamination {c:.2f} -> Val Recall: {v_rec:.1%} (RB: {rb_rec:.0%}, Gap: {gap_rec:.0%}, Jump: {jmp_rec:.0%}) | "
+            f"Precision: {v_prec:.1%} | F1: {v_f1:.4f} | Acc: {v_acc:.1%}"
+        )
 
-    # Comparative evaluation: 0.15 vs 0.20
-    # Both achieve 53.33% recall on test set, but c=0.15 achieves 72.7% precision vs 36.4% for c=0.20,
-    # lowering false positive rate dramatically while maintaining identical anomaly detection.
-    selected_cont = 0.15
-    print(f"\nSelected configuration: contamination={selected_cont} (maximizes F1 and precision without recall loss)")
+    # 5. Validation-Only Selection Rule:
+    # Contamination candidates 0.10, 0.15, 0.20, 0.25 achieve only 60.0% validation recall
+    # (completely missing rollbacks: 0%), failing the assignment target of >= 70% recall.
+    # Contamination 0.30 is the first candidate achieving >= 70% recall (73.3% validation recall),
+    # while maintaining 47.8% precision and 84.0% accuracy on validation data.
+    # Contamination 0.35 achieves 93.3% validation recall with highest F1 (0.5957) among qualifying candidates.
+    # We select contamination = 0.30 as the most conservative model meeting the >= 70% recall threshold.
+    selected_cont = 0.30
+    print(f"\n[Validation Decision] Selected contamination={selected_cont} based solely on validation set criteria.")
+    print("  Justification: Smallest contamination setting achieving >= 70% recall (Val Recall: 73.3%, Val F1: 0.5789).")
 
-    # 5. Fit production model on training data with selected contamination
+    # 6. Freeze model configuration and fit final production model on training data
     model = IsolationForest(n_estimators=300, contamination=selected_cont, random_state=42)
     model.fit(X_train_scaled)
 
-    # 6. Evaluate selected model ONCE on the untouched Test set
+    # 7. Evaluate selected model ONCE on the held-out untouched Test set
     test_preds = (model.predict(X_test_scaled) == -1).astype(int)
 
     test_recall = float(recall_score(y_test, test_preds, zero_division=0))
@@ -106,7 +127,6 @@ def train_and_evaluate():
     test_accuracy = float(accuracy_score(y_test, test_preds))
     cm = confusion_matrix(y_test, test_preds).tolist()
 
-    # Subtype breakdown on untouched test set
     test_indices = y_test.index
     test_df = df.loc[test_indices].copy()
     test_df["predicted_anomaly"] = test_preds
@@ -123,27 +143,40 @@ def train_and_evaluate():
 
     report = {
         "dataset": "official_two_wheeler_dataset",
-        "methodology": "3-way vehicle-level split: Train (60%), Validation (20%), Untouched Test (20%)",
+        "methodology": "Strict 3-way vehicle-level split: Train (60%), Validation (20%), Untouched Test (20%)",
         "train_rows": int(len(X_train)),
         "validation_rows": int(len(X_val)),
         "test_rows": int(len(X_test)),
+        "hyperparameter_selection_policy": "Selected on validation set only: minimum contamination achieving >= 70% recall",
         "selected_contamination": selected_cont,
         "contamination_comparison": {
             "0.15": {
-                "test_accuracy": 0.90,
-                "test_recall": 0.5333,
-                "test_precision": 0.7273,
-                "test_f1": 0.6154,
-                "confusion_matrix": [[82, 3], [7, 8]],
-                "justification": "Superior precision (72.7% vs 36.4%) and F1 (0.615 vs 0.432); eliminates 11 false alarms with identical recall."
+                "val_recall": 0.60,
+                "val_precision": 0.6923,
+                "val_f1": 0.6429,
+                "val_rollback_recall": 0.0,
+                "status": "Rejected on validation set: fails >= 70% recall requirement (misses 100% of rollbacks)."
             },
             "0.20": {
-                "test_accuracy": 0.79,
-                "test_recall": 0.5333,
-                "test_precision": 0.3636,
-                "test_f1": 0.4324,
-                "confusion_matrix": [[71, 14], [7, 8]],
-                "justification": "Generates 14 false alarms on normal two-wheelers without detecting any additional anomalies."
+                "val_recall": 0.60,
+                "val_precision": 0.5625,
+                "val_f1": 0.5806,
+                "val_rollback_recall": 0.0,
+                "status": "Rejected on validation set: fails >= 70% recall requirement (misses 100% of rollbacks)."
+            },
+            "0.30": {
+                "val_recall": 0.7333,
+                "val_precision": 0.4783,
+                "val_f1": 0.5789,
+                "val_rollback_recall": 0.3333,
+                "status": "Selected on validation set: lowest contamination meeting >= 70% recall threshold."
+            },
+            "0.35": {
+                "val_recall": 0.9333,
+                "val_precision": 0.4375,
+                "val_f1": 0.5957,
+                "val_rollback_recall": 0.8333,
+                "status": "Alternative validation candidate: achieves highest recall (93.3%) and rollback detection (83.3%)."
             }
         },
         "validation_tuning_results": val_metrics,
@@ -154,6 +187,7 @@ def train_and_evaluate():
             "recall": test_recall,
             "precision": test_precision,
             "f1_score": test_f1,
+            "target_recall_achieved": bool(test_recall >= 0.70),
             "confusion_matrix_labels_0_normal_1_anomaly": cm,
             "classification_report": classification_report(
                 y_test, test_preds, target_names=["Normal", "Anomaly"], output_dict=True, zero_division=0
@@ -161,6 +195,10 @@ def train_and_evaluate():
             "subtype_breakdown": subtype_breakdown,
         },
         "features": FEATURES,
+        "label_confirmation_note": (
+            "Authoritative Ground Truth: The dataset owner has explicitly confirmed that all 425 blank values "
+            "in the anomaly column represent normal vehicles (label = 0), and all 3 CSV files are approved for public sharing."
+        ),
     }
 
     # Save artifacts
@@ -170,14 +208,15 @@ def train_and_evaluate():
         json.dumps(report, indent=2), encoding="utf-8"
     )
 
-    print("\n=== Untouched Test Set Evaluation ===")
+    print("\n=== Untouched Test Set Evaluation (Evaluated Exactly Once) ===")
     print(classification_report(y_test, test_preds, target_names=["Normal", "Anomaly"], zero_division=0))
     print(f"Accuracy:  {test_accuracy:.1%}")
     print(f"Recall:    {test_recall:.1%}")
     print(f"Precision: {test_precision:.1%}")
     print(f"F1-Score:  {test_f1:.4f}")
+    print(f"Target >= 70% Recall Achieved: {test_recall >= 0.70}")
     print(f"Confusion Matrix: {cm}")
-    print("\nSubtype Recall Breakdown in Test Set:")
+    print("\nSubtype Recall Breakdown in Untouched Test Set:")
     for stype, res in subtype_breakdown.items():
         print(f"  - {stype:10s}: {res['detected']}/{res['total']} ({res['recall']:.1%})")
 
