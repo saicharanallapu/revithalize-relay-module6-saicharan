@@ -124,6 +124,46 @@ class TestFlaskEndpoints:
         data = res.get_json()
         assert data["totalVehicles"] == 500
 
+    def test_internal_admin_flagged_vehicles_default(self, client):
+        """Test admin flagged vehicles endpoint returns precomputed anomaly predictions."""
+        res = client.get("/internal/admin/flagged-vehicles")
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["status"] == "ok"
+        assert data["totalVehicles"] == 500
+        assert data["returnedCount"] > 0
+        assert "summary" in data
+        assert data["summary"]["totalRollbackWarnings"] == 25
+        assert data["summary"]["totalSuspicious"] > 0
+        assert len(data["vehicles"]) == data["returnedCount"]
+
+        # Validate structure of first vehicle entry
+        v = data["vehicles"][0]
+        assert "vehicleId" in v
+        assert "make" in v
+        assert "model" in v
+        assert "anomalyScore" in v
+        assert "verdict" in v
+        assert v["verdict"] in ["Suspicious", "Normal"]
+        assert "deterministicRollbackCheck" in v
+        assert "rollbackWarning" in v["deterministicRollbackCheck"]
+
+    def test_internal_admin_flagged_vehicles_filter_all(self, client):
+        """Test admin endpoint with filter=all returns all 500 vehicles."""
+        res = client.get("/internal/admin/flagged-vehicles?filter=all")
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["returnedCount"] == 500
+
+    def test_internal_admin_flagged_vehicles_filter_rollback(self, client):
+        """Test admin endpoint with filter=rollback returns exactly the 25 rollback vehicles."""
+        res = client.get("/internal/admin/flagged-vehicles?filter=rollback")
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["returnedCount"] == 25
+        for v in data["vehicles"]:
+            assert v["deterministicRollbackCheck"]["rollbackWarning"] is True
+
     def test_undefined_endpoint_returns_404(self, client):
         res = client.get("/internal/invalid-route")
         assert res.status_code == 404

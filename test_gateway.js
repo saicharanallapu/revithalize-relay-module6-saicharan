@@ -200,6 +200,37 @@ async function runTests() {
     assert.strictEqual(rNotFoundAnomaly.status, 404);
     record("E2E Non-existent vehicle anomaly score returns 404 through Gateway", true);
 
+    // E2E Admin Dashboard Web Page
+    const rAdminPage = await fetch(`${liveBase}/admin`);
+    assert.strictEqual(rAdminPage.status, 200);
+    const adminHtml = await rAdminPage.text();
+    assert.ok(adminHtml.includes("RELAY Module 6"));
+    assert.ok(adminHtml.includes("ADMIN DASHBOARD"));
+    assert.ok(adminHtml.includes("vehicles-table"));
+    record("E2E GET /admin serves the responsive admin dashboard HTML", true);
+
+    // E2E Admin Flagged Vehicles API
+    const rFlagged = await fetch(`${liveBase}/api/v1/admin/flagged-vehicles`);
+    assert.strictEqual(rFlagged.status, 200);
+    const flaggedData = await rFlagged.json();
+    assert.strictEqual(flaggedData.status, "ok");
+    assert.strictEqual(flaggedData.totalVehicles, 500);
+    assert.ok(flaggedData.returnedCount > 0);
+    assert.strictEqual(flaggedData.summary.totalRollbackWarnings, 25);
+    const sampleV = flaggedData.vehicles[0];
+    assert.ok(sampleV.vehicleId);
+    assert.ok(typeof sampleV.anomalyScore === "number");
+    assert.ok(["Suspicious", "Normal"].includes(sampleV.verdict));
+    assert.ok(sampleV.deterministicRollbackCheck);
+    record("E2E GET /api/v1/admin/flagged-vehicles returns precomputed anomaly scores and verdicts", true);
+
+    // E2E Admin Flagged Vehicles Filter Rollback
+    const rRollbackFilter = await fetch(`${liveBase}/api/v1/admin/flagged-vehicles?filter=rollback`);
+    assert.strictEqual(rRollbackFilter.status, 200);
+    const rbFilterData = await rRollbackFilter.json();
+    assert.strictEqual(rbFilterData.returnedCount, 25);
+    record("E2E GET /api/v1/admin/flagged-vehicles?filter=rollback filters exactly 25 rollback warnings", true);
+
   } catch (err) {
     record("Live E2E communication test", false, err.message);
   } finally {

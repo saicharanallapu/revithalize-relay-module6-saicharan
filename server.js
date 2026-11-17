@@ -1,11 +1,15 @@
 // Express API Gateway for RELAY Module 6
 // Proxies public client requests to the Python Flask microservice (port 5001)
 
+const path = require("node:path");
 const express = require("express");
 
 function createApp(aiUrl = process.env.AI_URL || "http://127.0.0.1:5001") {
   const app = express();
   app.use(express.json());
+
+  // Static assets for the admin dashboard
+  app.use(express.static(path.join(__dirname, "public")));
 
   // Input validation middleware for vehicleId
   const validateVehicleId = (req, res, next) => {
@@ -71,12 +75,25 @@ function createApp(aiUrl = process.env.AI_URL || "http://127.0.0.1:5001") {
     proxyAI(req, res, `/internal/vehicles/${encodeURIComponent(req.params.id)}/anomaly-score`)
   );
 
+  // Admin Flagged Vehicles API endpoint
+  app.get("/api/v1/admin/flagged-vehicles", (req, res) => {
+    const filter = req.query.filter ? `?filter=${encodeURIComponent(req.query.filter)}` : "";
+    return proxyAI(req, res, `/internal/admin/flagged-vehicles${filter}`);
+  });
+
+  // Admin Dashboard Web Page
+  app.get("/admin", (_req, res) => {
+    res.sendFile(path.join(__dirname, "public", "admin.html"));
+  });
+
   // Root endpoint info
   app.get("/", (_req, res) => res.json({
     name: "RELAY Module 6 API Gateway",
     version: "1.0.0",
     endpoints: [
       "GET /health",
+      "GET /admin",
+      "GET /api/v1/admin/flagged-vehicles",
       "GET /api/v1/vehicles/:id/price",
       "GET /api/v1/vehicles/:id/anomaly-score"
     ]

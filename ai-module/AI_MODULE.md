@@ -194,7 +194,23 @@ During deep integrity auditing of the official dataset, two historical timeline 
 
 ---
 
-## 7. Retraining & Operational Commands
+## 7. Admin Dashboard Integration (`/admin`)
+
+To fulfill the assignment requirement to *"show the anomaly score and verdict in the admin dashboard's flagged vehicles table"*, RELAY Module 6 provides:
+1. **Interactive Admin Web Dashboard (`public/admin.html`)**: Served on `http://127.0.0.1:3000/admin`.
+2. **Batch Flagged Vehicles API**: `GET /api/v1/admin/flagged-vehicles?filter={flagged|rollback|suspicious|all|normal}`.
+3. **Data Displayed**:
+   - Vehicle Chassis ID & Alias
+   - Make, Model, Year, Category
+   - Care Score & Odometer Integrity Status
+   - Isolation Forest numeric anomaly score (`+0.0821`)
+   - ML verdict (`Suspicious` vs `Normal`)
+   - Deterministic Rollback Warning (`🚨 Rollback Warning` vs `✓ Monotonic`)
+   - Diagnostic reasons & 8-feature inspection drawer.
+
+---
+
+## 8. Retraining & Operational Commands
 
 ```powershell
 cd ai-module

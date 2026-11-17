@@ -41,6 +41,113 @@ vehicles_cache = {}
 alias_cache = {}
 features_df = None
 features_by_alias = {}
+admin_evaluations_cache = []
+
+
+def resolve_vehicle(vid: str):
+    """Resolve vehicle record by chassis ID or alias ID."""
+    if not vid:
+        return None
+    key = str(vid).strip()
+    return vehicles_cache.get(key) or vehicles_cache.get(key.upper()) or alias_cache.get(key) or alias_cache.get(key.upper())
+
+
+def resolve_features_row(vid: str):
+    """Resolve feature series by chassis ID or alias ID."""
+    if not vid or features_df is None:
+        return None
+    key = str(vid).strip()
+    if key in features_df.index:
+        return features_df.loc[key]
+    if key.upper() in features_df.index:
+        return features_df.loc[key.upper()]
+    if isinstance(features_by_alias, pd.DataFrame) and key in features_by_alias.index:
+        return features_by_alias.loc[key]
+    if isinstance(features_by_alias, pd.DataFrame) and key.upper() in features_by_alias.index:
+        return features_by_alias.loc[key.upper()]
+    return None
+
+
+def generate_reasons(row, is_anomaly: bool) -> list:
+    """Generate explainable diagnosis reasons based on feature thresholds."""
+    reasons = []
+    if is_anomaly:
+        if row.get("gap_count", 0) > 0:
+            reasons.append(f"Detected {int(row['gap_count'])} extended service-history gap(s) (>365 days)")
+        if row.get("odometer_increment_std", 0) > 3000.0:
+            reasons.append(f"High odometer increment variability (std: {row['odometer_increment_std']:.0f} km)")
+        if row.get("odometer_increment_mean", 0) > 5000.0:
+            reasons.append(f"Unusually large average odometer jump ({row['odometer_increment_mean']:.0f} km/service)")
+        if row.get("service_interval_std", 0) > 40.0:
+            reasons.append(f"Highly irregular service intervals (std: {row['service_interval_std']:.1f} days)")
+        if row.get("confirmed_ratio", 1.0) < 0.70:
+            reasons.append(f"Low proportion of confirmed service records ({row['confirmed_ratio'] * 100:.1f}%)")
+        if row.get("unique_dealers", 0) <= 1:
+            reasons.append("Single dealer appears across entire service history")
+
+        if not reasons:
+            reasons.append("Multi-feature statistical anomaly detected across service intervals and odometer steps")
+    else:
+        reasons.append("Service history intervals, dealer distribution, and odometer steps conform to standard patterns")
+    return reasons
+
+
+def precompute_admin_evaluations():
+    """Vectorized precomputation of anomaly evaluations for all 500 vehicles for the admin dashboard."""
+    global admin_evaluations_cache
+    if features_df is None or model is None or scaler is None or features_df.empty:
+        admin_evaluations_cache = []
+        return
+
+    try:
+        feature_matrix = features_df[FEATURES]
+        scaled_matrix = scaler.transform(feature_matrix)
+        predictions = model.predict(scaled_matrix)
+        decision_scores = model.decision_function(scaled_matrix)
+
+        evaluations = []
+        for i, chassis in enumerate(features_df.index):
+            pred = int(predictions[i])
+            score = round(float(-decision_scores[i]), 4)
+            is_anomaly = (pred == -1)
+            row = features_df.iloc[i]
+            reasons = generate_reasons(row, is_anomaly)
+
+            veh = resolve_vehicle(chassis) or {}
+            rb = veh.get("deterministicRollbackCheck") or {}
+            has_negative = bool(rb.get("hasNegativeIncrement", False))
+            rollback_warning = bool(rb.get("rollbackWarning", False))
+            odometer_status = veh.get("odometerStatus") or "Normal"
+
+            is_flagged = is_anomaly or rollback_warning or (odometer_status in ["Suspicious", "Flagged"])
+
+            evaluations.append({
+                "vehicleId": str(chassis),
+                "aliasId": veh.get("aliasId"),
+                "make": veh.get("make") or veh.get("oem") or "Unknown",
+                "model": veh.get("model") or "Unknown",
+                "year": veh.get("year"),
+                "category": veh.get("category") or veh.get("vehicleType") or "Two-Wheeler",
+                "careScore": veh.get("careScore"),
+                "odometerStatus": odometer_status,
+                "showroomPrice": veh.get("showroomPrice"),
+                "anomalyScore": score,
+                "verdict": "Suspicious" if is_anomaly else "Normal",
+                "reasons": reasons,
+                "extractedFeatures": {col: round(float(row[col]), 2) for col in FEATURES},
+                "deterministicRollbackCheck": {
+                    "hasNegativeIncrement": has_negative,
+                    "negativeIncrementCount": rb.get("negativeIncrementCount", 0),
+                    "minIncrementKm": rb.get("minIncrementKm", 0.0),
+                    "rollbackWarning": rollback_warning,
+                    "warningMessage": rb.get("warningMessage")
+                },
+                "isFlagged": is_flagged
+            })
+        admin_evaluations_cache = evaluations
+    except Exception as err:
+        logger.error("Failed to precompute admin evaluations: %s", err)
+        admin_evaluations_cache = []
 
 
 def load_assets():
@@ -82,39 +189,18 @@ def load_assets():
         features_df = pd.DataFrame(columns=FEATURES)
         features_by_alias = {}
 
+    precompute_admin_evaluations()
+
     logger.info(
-        "Assets loaded successfully: %d vehicles, %d feature rows",
+        "Assets loaded successfully: %d vehicles, %d feature rows, %d admin evaluations precomputed",
         len(vehicles_cache),
         len(features_df) if features_df is not None else 0,
+        len(admin_evaluations_cache),
     )
 
 
 # Load assets on module import
 load_assets()
-
-
-def resolve_vehicle(vid: str):
-    """Resolve vehicle record by chassis ID or alias ID."""
-    if not vid:
-        return None
-    key = str(vid).strip()
-    return vehicles_cache.get(key) or vehicles_cache.get(key.upper()) or alias_cache.get(key) or alias_cache.get(key.upper())
-
-
-def resolve_features_row(vid: str):
-    """Resolve feature series by chassis ID or alias ID."""
-    if not vid or features_df is None:
-        return None
-    key = str(vid).strip()
-    if key in features_df.index:
-        return features_df.loc[key]
-    if key.upper() in features_df.index:
-        return features_df.loc[key.upper()]
-    if isinstance(features_by_alias, pd.DataFrame) and key in features_by_alias.index:
-        return features_by_alias.loc[key]
-    if isinstance(features_by_alias, pd.DataFrame) and key.upper() in features_by_alias.index:
-        return features_by_alias.loc[key.upper()]
-    return None
 
 
 def get_anomaly_evaluation(vehicle_id: str) -> dict:
@@ -134,26 +220,7 @@ def get_anomaly_evaluation(vehicle_id: str) -> dict:
     raw_decision_score = float(model.decision_function(feature_scaled)[0])
 
     is_anomaly = (prediction == -1)
-    reasons = []
-
-    if is_anomaly:
-        if row.get("gap_count", 0) > 0:
-            reasons.append(f"Detected {int(row['gap_count'])} extended service-history gap(s) (>365 days)")
-        if row.get("odometer_increment_std", 0) > 3000.0:
-            reasons.append(f"High odometer increment variability (std: {row['odometer_increment_std']:.0f} km)")
-        if row.get("odometer_increment_mean", 0) > 5000.0:
-            reasons.append(f"Unusually large average odometer jump ({row['odometer_increment_mean']:.0f} km/service)")
-        if row.get("service_interval_std", 0) > 40.0:
-            reasons.append(f"Highly irregular service intervals (std: {row['service_interval_std']:.1f} days)")
-        if row.get("confirmed_ratio", 1.0) < 0.70:
-            reasons.append(f"Low proportion of confirmed service records ({row['confirmed_ratio'] * 100:.1f}%)")
-        if row.get("unique_dealers", 0) <= 1:
-            reasons.append("Single dealer appears across entire service history")
-
-        if not reasons:
-            reasons.append("Multi-feature statistical anomaly detected across service intervals and odometer steps")
-    else:
-        reasons.append("Service history intervals, dealer distribution, and odometer steps conform to standard patterns")
+    reasons = generate_reasons(row, is_anomaly)
 
     vehicle_info = resolve_vehicle(vehicle_id)
     rollback_check = vehicle_info.get("deterministicRollbackCheck") if vehicle_info else None
@@ -245,6 +312,43 @@ def list_vehicles():
     return jsonify({
         "totalVehicles": len(unique_chassis),
         "sampleIds": list(unique_chassis)[:10]
+    }), 200
+
+
+@app.get("/internal/admin/flagged-vehicles")
+def internal_flagged_vehicles():
+    """Return evaluated vehicle records for the admin dashboard with filtering support."""
+    filter_mode = request.args.get("filter", "flagged").strip().lower()
+
+    if filter_mode == "all":
+        filtered = admin_evaluations_cache
+    elif filter_mode == "rollback":
+        filtered = [v for v in admin_evaluations_cache if v["deterministicRollbackCheck"]["rollbackWarning"]]
+    elif filter_mode == "suspicious":
+        filtered = [v for v in admin_evaluations_cache if v["verdict"] == "Suspicious"]
+    elif filter_mode == "normal":
+        filtered = [v for v in admin_evaluations_cache if v["verdict"] == "Normal" and not v["deterministicRollbackCheck"]["rollbackWarning"]]
+    else:  # default 'flagged' (either ML Suspicious OR Rollback Warning OR Non-Consistent Odometer)
+        filtered = [v for v in admin_evaluations_cache if v["isFlagged"]]
+
+    total_suspicious = sum(1 for v in admin_evaluations_cache if v["verdict"] == "Suspicious")
+    total_rollback = sum(1 for v in admin_evaluations_cache if v["deterministicRollbackCheck"]["rollbackWarning"])
+    total_combined = sum(1 for v in admin_evaluations_cache if v["isFlagged"])
+    total_normal = sum(1 for v in admin_evaluations_cache if v["verdict"] == "Normal" and not v["deterministicRollbackCheck"]["rollbackWarning"])
+
+    return jsonify({
+        "status": "ok",
+        "filter": filter_mode,
+        "totalVehicles": len(admin_evaluations_cache),
+        "returnedCount": len(filtered),
+        "summary": {
+            "totalVehicles": len(admin_evaluations_cache),
+            "totalFlagged": total_combined,
+            "totalSuspicious": total_suspicious,
+            "totalRollbackWarnings": total_rollback,
+            "totalNormal": total_normal
+        },
+        "vehicles": filtered
     }), 200
 
 

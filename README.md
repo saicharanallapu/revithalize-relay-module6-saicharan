@@ -113,6 +113,15 @@ Calculates estimated fair market value range based on:
   - Untouched Test Set: 20% (100 vehicles, 15 anomalies)
 - Scaler is fitted **strictly on the Training set** (zero data leakage).
 
+### Feature C: Admin Dashboard — Flagged Vehicles Table (`public/admin.html`, `/admin`)
+- **Responsive Web Dashboard**: Accessible locally at `http://localhost:3000/admin`.
+- **Flagged Vehicles Table**:
+  - Displays all 500 monitored vehicles with dedicated filters (`All Flagged`, `Critical Rollback Warnings`, `ML Suspicious`, `All Vehicles`, `Normal`).
+  - **Isolation Forest Anomaly Score & Verdict**: Shows exact float anomaly scores and visual pills (`Suspicious` vs `Normal`).
+  - **Deterministic Rollback Warning**: Separately renders physical verification warnings (`🚨 Rollback Warning` vs `✓ Monotonic`) for vehicles with chronological odometer dips.
+  - **Interactive Explainability**: Clicking any row opens an audit modal displaying the 8-feature vector and specific diagnostic trigger reasons.
+  - **Optimized Batch API**: Backed by `GET /api/v1/admin/flagged-vehicles`, avoiding 500 individual client requests.
+
 ---
 
 ## 5. Machine Learning Performance Metrics (Validation-Only Selection)
@@ -223,7 +232,7 @@ Invoke-RestMethod http://localhost:3000/health
 ```json
 {
   "status": "ok",
-  "gateway": "relay-module6-gateway",
+  "gateway": "relay-node-gateway",
   "upstreamStatus": "connected",
   "aiService": {
     "dataset": "official_two_wheeler_dataset",
@@ -232,6 +241,29 @@ Invoke-RestMethod http://localhost:3000/health
     "service": "relay-ai-module",
     "status": "ok"
   }
+}
+```
+
+### Admin Dashboard & Batch Flagged Vehicles Feed
+- **Local Web Dashboard**: Open `http://localhost:3000/admin` in any web browser.
+- **Batch Flagged Vehicles API**:
+```powershell
+Invoke-RestMethod "http://localhost:3000/api/v1/admin/flagged-vehicles?filter=flagged"
+```
+```json
+{
+  "status": "ok",
+  "filter": "flagged",
+  "totalVehicles": 500,
+  "returnedCount": 154,
+  "summary": {
+    "totalVehicles": 500,
+    "totalFlagged": 154,
+    "totalSuspicious": 141,
+    "totalRollbackWarnings": 25,
+    "totalNormal": 359
+  },
+  "vehicles": [...]
 }
 ```
 
